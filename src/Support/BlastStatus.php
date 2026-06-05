@@ -13,6 +13,7 @@ final readonly class BlastStatus
         public int $failed,
         public int $invalid,
         public int $throttled,
+        public int $transportRetries,
         public int $workers,
         public int $rateCapPerSec,
         public bool $validateOnly,
@@ -21,6 +22,7 @@ final readonly class BlastStatus
         public float $avgLatencyMs,
         public float $elapsedSeconds,
         public bool $finished,
+        public bool $stalled,
     ) {}
 
     /**
@@ -37,6 +39,7 @@ final readonly class BlastStatus
             'failed' => $this->failed,
             'invalid' => $this->invalid,
             'throttled' => $this->throttled,
+            'transport_retries' => $this->transportRetries,
             'workers' => $this->workers,
             'rate_cap_per_sec' => $this->rateCapPerSec,
             'validate_only' => $this->validateOnly,
@@ -45,6 +48,7 @@ final readonly class BlastStatus
             'avg_latency_ms' => $this->avgLatencyMs,
             'elapsed_seconds' => $this->elapsedSeconds,
             'finished' => $this->finished,
+            'stalled' => $this->stalled,
         ];
     }
 }

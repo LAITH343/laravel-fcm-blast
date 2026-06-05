@@ -157,8 +157,13 @@ class BlastEngine
      */
     private function applyOutcome(Outcome $outcome, array $entry, EngineRunConfig $config, array &$retry, array &$delta): void
     {
-        if ($outcome === Outcome::Throttled && $config->maxRetries > $entry['attempts'] + 1) {
-            $delta['throttled']++;
+        $retryable = $outcome === Outcome::Throttled || $outcome === Outcome::Transient;
+        if ($retryable && $config->maxRetries > $entry['attempts'] + 1) {
+            if ($outcome === Outcome::Throttled) {
+                $delta['throttled']++;
+            } else {
+                $delta['transport']++;
+            }
             $backoff = min(self::MAX_BACKOFF, (2 ** $entry['attempts']) * 0.25);
             $retry[] = [
                 'token' => $entry['token'],
@@ -225,10 +230,10 @@ class BlastEngine
     }
 
     /**
-     * @return array{sent:int,ok:int,failed:int,invalid:int,throttled:int,latency_sum_ms:int}
+     * @return array{sent:int,ok:int,failed:int,invalid:int,throttled:int,transport:int,latency_sum_ms:int}
      */
     private function emptyDelta(): array
     {
-        return ['sent' => 0, 'ok' => 0, 'failed' => 0, 'invalid' => 0, 'throttled' => 0, 'latency_sum_ms' => 0];
+        return ['sent' => 0, 'ok' => 0, 'failed' => 0, 'invalid' => 0, 'throttled' => 0, 'transport' => 0, 'latency_sum_ms' => 0];
     }
 }

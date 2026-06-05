@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property int $failed
  * @property int $invalid
  * @property int $throttled
+ * @property int $transport_retries
  * @property int $latency_sum_ms
  * @property bool $validate_only
  * @property string $status
@@ -38,6 +39,22 @@ class FcmBlastRun extends Model
         return in_array($this->status, ['completed', 'failed'], true);
     }
 
+    /**
+     * A run is stalled if it is still "running" but no worker has flushed
+     * counters recently (e.g. the workers were killed). Used to stop the
+     * clock so elapsed/RPS reflect reality instead of wall-clock time.
+     */
+    public function isStalled(int $thresholdSeconds = 15): bool
+    {
+        if ($this->isFinished() || $this->started_at === null) {
+            return false;
+        }
+
+        $lastActivity = $this->updated_at?->getTimestamp() ?? $this->started_at->getTimestamp();
+
+        return (time() - $lastActivity) > $thresholdSeconds;
+    }
+
     public function terminalCount(): int
     {
         return $this->ok + $this->failed + $this->invalid;
@@ -58,7 +75,7 @@ class FcmBlastRun extends Model
         if (! $start) {
             return 0.0;
         }
-        $end = $this->finished_at?->getTimestamp() ?? time();
+        $end = $this->finished_at?->getTimestamp() ?? $this->updated_at?->getTimestamp() ?? time();
 
         return $this->terminalCount() / max(1, $end - $start);
     }
@@ -69,7 +86,7 @@ class FcmBlastRun extends Model
         if (! $start) {
             return 0.0;
         }
-        $end = $this->finished_at?->getTimestamp() ?? time();
+        $end = $this->finished_at?->getTimestamp() ?? $this->updated_at?->getTimestamp() ?? time();
 
         return max(0, $end - $start);
     }

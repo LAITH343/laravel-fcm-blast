@@ -19,7 +19,7 @@ interface RunReporter
     /**
      * Atomically apply a batch of counter deltas accumulated by a worker.
      *
-     * @param  array{sent:int,ok:int,failed:int,invalid:int,throttled:int,latency_sum_ms:int}  $delta
+     * @param  array{sent:int,ok:int,failed:int,invalid:int,throttled:int,transport:int,latency_sum_ms:int}  $delta
      */
     public function flush(int $runId, array $delta): void;
 

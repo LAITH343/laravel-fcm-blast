@@ -193,17 +193,21 @@ PowerShell `Start-Process` is fine for ad-hoc runs. For a managed service, wrap 
 ```php
 $status = FcmBlast::status($runId);   // Laith343\FcmBlast\Support\BlastStatus
 
-$status->sent;            // attempts completed (includes throttled retries)
-$status->ok;              // 2xx
-$status->invalid;         // 404/400 -> InvalidTokenHandler fired
-$status->throttled;       // 429/503 or transient transport error, retried with backoff
-$status->failed;          // permanent errors / retries exhausted
+$status->sent;             // attempts completed (includes retries)
+$status->ok;               // 2xx
+$status->invalid;          // 404/400 -> InvalidTokenHandler fired
+$status->throttled;        // FCM 429/503 retry events (quota) -> watch this for quota limits
+$status->transportRetries; // transient transport retry events (timeout/reset) -> watch this for network limits
+$status->failed;           // permanent errors / retries exhausted
 $status->rps;
 $status->avgLatencyMs;
 $status->progressPercent;
 $status->finished;
-$status->toArray();       // for JSON endpoints
+$status->stalled;          // running but no worker has reported in ~15s (workers died)
+$status->toArray();        // for JSON endpoints
 ```
+
+> `throttled` vs `transportRetries` tells you *which ceiling* you're hitting: `throttled` climbing = FCM project quota (request more); `transportRetries` climbing = network/connection limits (fewer connections, scale hosts). Both are retried automatically and only become `failed` once `max_retries` is exhausted.
 
 A `Laith343\FcmBlast\Events\FcmBlastCompleted` event fires when a run finishes — listen for it to trigger follow-up work.
 

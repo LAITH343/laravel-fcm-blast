@@ -17,7 +17,7 @@ final class OutcomeClassifier
     {
         if ($curlResult !== CURLE_OK) {
             return in_array($curlResult, self::RETRYABLE_CURL_ERRORS, true)
-                ? Outcome::Throttled
+                ? Outcome::Transient
                 : Outcome::Failed;
         }
 

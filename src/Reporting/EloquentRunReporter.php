@@ -36,6 +36,7 @@ class EloquentRunReporter implements RunReporter
             'failed' => DB::raw('failed + '.(int) $delta['failed']),
             'invalid' => DB::raw('invalid + '.(int) $delta['invalid']),
             'throttled' => DB::raw('throttled + '.(int) $delta['throttled']),
+            'transport_retries' => DB::raw('transport_retries + '.(int) $delta['transport']),
             'latency_sum_ms' => DB::raw('latency_sum_ms + '.(int) $delta['latency_sum_ms']),
             'updated_at' => now(),
         ]);
@@ -71,6 +72,7 @@ class EloquentRunReporter implements RunReporter
             failed: $run->failed,
             invalid: $run->invalid,
             throttled: $run->throttled,
+            transportRetries: $run->transport_retries,
             workers: $run->workers,
             rateCapPerSec: $run->rate_cap_per_sec,
             validateOnly: $run->validate_only,
@@ -79,6 +81,7 @@ class EloquentRunReporter implements RunReporter
             avgLatencyMs: round($run->avgLatencyMs(), 1),
             elapsedSeconds: round($run->elapsedSeconds(), 1),
             finished: $run->isFinished(),
+            stalled: $run->isStalled(),
         );
     }
 }
