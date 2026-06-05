@@ -42,8 +42,10 @@ return [
     'validate_only' => (bool) env('FCM_BLAST_VALIDATE_ONLY', false),
 
     /*
-     | Max attempts per token for retryable responses (429/503) before it is
-     | counted as failed.
+     | Max attempts per token for retryable outcomes before it is counted as
+     | failed. Retryable = HTTP 429/503 and transient transport errors
+     | (timeouts, connection resets, send/recv failures). Each is re-sent with
+     | exponential backoff and tracked in the "throttled" counter while retrying.
      */
     'max_retries' => (int) env('FCM_BLAST_MAX_RETRIES', 5),
 
@@ -58,10 +60,18 @@ return [
 
     /*
      | Max TCP connections per host. Null uses rateCap * 0.3 (tuned for the
-     | many-connections HTTP/1.1 mock). For real FCM over HTTP/2 set a small
-     | value (e.g. 8-32) so requests multiplex instead of opening sockets.
+     | many-connections HTTP/1.1 mock). For real FCM over HTTP/2 set this to
+     | the number of connections you want (e.g. 100).
      */
     'max_host_connections' => env('FCM_BLAST_MAX_HOST_CONNECTIONS'),
+
+    /*
+     | Max concurrent HTTP/2 streams per connection. FCM drops connections
+     | pushed past ~100 streams, so curl opens a new connection (up to
+     | max_host_connections) once a connection hits this. 100 conns x 100
+     | streams = 10k in-flight.
+     */
+    'max_concurrent_streams' => (int) env('FCM_BLAST_MAX_CONCURRENT_STREAMS', 100),
 
     /*
      | Queue name and connection the blast jobs are dispatched onto. The

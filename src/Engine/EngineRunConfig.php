@@ -25,5 +25,6 @@ final class EngineRunConfig
         public ?Closure $onInvalidToken = null,
         public int $httpVersion = CURL_HTTP_VERSION_2TLS,
         public ?int $maxHostConnections = null,
+        public int $maxConcurrentStreams = 100,
     ) {}
 }

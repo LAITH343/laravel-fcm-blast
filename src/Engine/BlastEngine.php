@@ -37,6 +37,7 @@ class BlastEngine
         curl_multi_setopt($mh, CURLMOPT_MAX_TOTAL_CONNECTIONS, $hostConnections);
         curl_multi_setopt($mh, CURLMOPT_MAX_HOST_CONNECTIONS, $hostConnections);
         curl_multi_setopt($mh, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+        curl_multi_setopt($mh, CURLMOPT_MAX_CONCURRENT_STREAMS, $config->maxConcurrentStreams);
 
         $pool = new HandlePool;
         $rate = new RateWindow($config->rateCapPerSec);
@@ -97,7 +98,7 @@ class BlastEngine
                 $delta['latency_sum_ms'] += (int) ((microtime(true) - $entry['start']) * 1000);
                 $delta['sent']++;
 
-                $outcome = $this->classify($info['result'], $code);
+                $outcome = OutcomeClassifier::classify($info['result'], $code);
                 $this->applyOutcome($outcome, $entry, $config, $retry, $delta);
 
                 curl_multi_remove_handle($mh, $ch);
@@ -181,21 +182,6 @@ class BlastEngine
             default:
                 $delta['failed']++;
         }
-    }
-
-    private function classify(int $result, int $code): Outcome
-    {
-        if ($result === CURLE_OK && $code >= 200 && $code < 300) {
-            return Outcome::Ok;
-        }
-        if ($code === 404 || $code === 400) {
-            return Outcome::Invalid;
-        }
-        if ($code === 429 || $code === 503) {
-            return Outcome::Throttled;
-        }
-
-        return Outcome::Failed;
     }
 
     private function configureHandle(CurlHandle $ch, string $token, string $bearer, EngineRunConfig $config): void

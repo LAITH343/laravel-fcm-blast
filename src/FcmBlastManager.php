@@ -72,7 +72,9 @@ class FcmBlastManager
 
         $globalCap = (int) $this->config->get('fcm-blast.rate_cap_per_sec', 10000);
         $rateCap = max(1, (int) floor($globalCap / $workers));
-        $concurrency = max(200, (int) ceil($rateCap * 0.6));
+        $maxHostConnections = $this->maxHostConnections();
+        $maxConcurrentStreams = (int) $this->config->get('fcm-blast.max_concurrent_streams', 100);
+        $concurrency = $this->concurrency($rateCap, $maxHostConnections, $maxConcurrentStreams);
         $validateOnly = $this->validateOnly ?? (bool) $this->config->get('fcm-blast.validate_only', false);
 
         $queue = (string) $this->config->get('fcm-blast.queue', 'fcm-blast');
@@ -86,7 +88,6 @@ class FcmBlastManager
         $this->reset();
 
         $httpVersion = $this->httpVersion();
-        $maxHostConnections = $this->maxHostConnections();
 
         foreach ($slices as $slice) {
             SendFcmBatch::dispatch(
@@ -103,6 +104,7 @@ class FcmBlastManager
                 (int) $this->config->get('fcm-blast.max_retries', 5),
                 $httpVersion,
                 $maxHostConnections,
+                $maxConcurrentStreams,
                 $queue,
             );
         }
@@ -121,6 +123,21 @@ class FcmBlastManager
         $this->messageBuilderClass = null;
         $this->invalidTokenHandlerClass = null;
         $this->validateOnly = null;
+    }
+
+    /**
+     * In-flight cap. With a fixed connection pool (HTTP/2), size it to the
+     * actual stream capacity (connections * streams) so requests are not
+     * queued inside curl past their timeout. Otherwise (e.g. the HTTP/1.1
+     * mock with an unbounded pool) fall back to a rate-derived estimate.
+     */
+    private function concurrency(int $rateCap, ?int $maxHostConnections, int $maxConcurrentStreams): int
+    {
+        if ($maxHostConnections !== null) {
+            return max(1, $maxHostConnections * $maxConcurrentStreams);
+        }
+
+        return max(200, (int) ceil($rateCap * 0.6));
     }
 
     private function httpVersion(): int

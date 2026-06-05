@@ -29,6 +29,58 @@ php artisan migrate
 
 > **Real FCM needs HTTP/2.** Over HTTP/1.1 every in-flight request needs its own TLS connection, so high concurrency to `fcm.googleapis.com` exhausts sockets (timeouts, broken pipes). `http_version => '2tls'` (the default) multiplexes thousands of requests over a handful of connections — set `max_host_connections` to something small (8-32). `2tls` automatically uses HTTP/1.1 for plain-`http` endpoints, so a local mock is unaffected and can keep its many-connections setup (`max_host_connections => null`).
 
+## Environment variables
+
+Every config key has an env override:
+
+| Env var | Default | What it does |
+|---|---|---|
+| `FCM_BLAST_CREDENTIALS` | — | Service-account JSON path or string. Empty = fake-token mode (mock testing). |
+| `FCM_BLAST_PROJECT_ID` | — | Firebase project id; builds the FCM v1 endpoint. |
+| `FCM_BLAST_ENDPOINT` | — | Override endpoint. Empty = real FCM. Set to a mock URL for load testing. |
+| `FCM_BLAST_RATE_CAP` | `10000` | **Global** sends/sec cap, split across workers (`10000` = 600k/min). |
+| `FCM_BLAST_MAX_HOST_CONNECTIONS` | `16` | TCP connections per **worker**. Null = `rateCap*0.3` (HTTP/1.1 mock). |
+| `FCM_BLAST_MAX_CONCURRENT_STREAMS` | `100` | Max concurrent HTTP/2 streams per connection (FCM drops >~100). |
+| `FCM_BLAST_HTTP_VERSION` | `2tls` | `2tls` (HTTP/2 over TLS, 1.1 over cleartext), `2`, or `1.1`. |
+| `FCM_BLAST_MAX_RETRIES` | `5` | Attempts per token for 429/503 + transient transport errors. |
+| `FCM_BLAST_QUEUE` | `fcm-blast` | Queue name the jobs run on. |
+| `FCM_BLAST_CONNECTION` | `redis` | Queue connection (must be `redis` for stale-job purging). |
+
+> `max_host_connections` is **per worker**. Total connections to FCM = `workers × max_host_connections`. In-flight capacity per worker = `max_host_connections × max_concurrent_streams` (the engine sizes its concurrency to exactly this).
+
+## Sizing for your target RPS
+
+Throughput is governed by **Little's Law**:
+
+```
+in-flight needed = target_RPS × avg_latency_seconds
+capacity         = workers × max_host_connections × max_concurrent_streams
+```
+
+To hit a target RPS, make `capacity ≥ in-flight needed`, and keep `FCM_BLAST_RATE_CAP` at the rate you want (it caps emission so you never exceed it).
+
+**Worked example — 10,000 RPS (600k/min):**
+
+| avg latency | in-flight needed | example config (capacity) |
+|---|---|---|
+| 300 ms | 3,000 | 4 workers × 8 × 100 = 3,200 |
+| 600 ms | 6,000 | 4 workers × 16 × 100 = 6,400 |
+| 1,000 ms | 10,000 | 4 workers × 25 × 100 = 10,000 |
+
+```dotenv
+FCM_BLAST_RATE_CAP=10000
+FCM_BLAST_MAX_HOST_CONNECTIONS=16   # per worker
+FCM_BLAST_MAX_CONCURRENT_STREAMS=100
+```
+with **4 workers** → 6,400 in-flight, enough for 10k RPS up to ~640ms latency; `rate_cap` then holds the ceiling at 10k.
+
+**Three real limits, in order of what you'll hit first:**
+1. **Network egress** — a single host (especially residential/cellular) tolerates only so many simultaneous connections. Failures show as transport errors (timeouts/resets), now auto-retried. Keep `max_host_connections` to what your link handles; scale out across hosts for more.
+2. **Latency** — higher latency needs more in-flight for the same RPS. Measure `avg_latency_ms` from a run and plug it into the formula.
+3. **FCM project quota** — above it, FCM returns `429`/`503` (the `throttled` counter). Check/raise it in Google Cloud Console → IAM & Admin → Quotas → "Firebase Cloud Messaging API".
+
+> Don't over-provision connections. Use the **smallest** `connections × streams` that covers your latency — extra connections only increase the handshake burst (more transport failures) without raising throughput, since `rate_cap` is the real ceiling.
+
 ## Integrate
 
 Implement two contracts. The package never touches your database directly.
@@ -144,8 +196,8 @@ $status = FcmBlast::status($runId);   // Laith343\FcmBlast\Support\BlastStatus
 $status->sent;            // attempts completed (includes throttled retries)
 $status->ok;              // 2xx
 $status->invalid;         // 404/400 -> InvalidTokenHandler fired
-$status->throttled;       // 429/503 retried with backoff
-$status->failed;          // other errors / retries exhausted
+$status->throttled;       // 429/503 or transient transport error, retried with backoff
+$status->failed;          // permanent errors / retries exhausted
 $status->rps;
 $status->avgLatencyMs;
 $status->progressPercent;
@@ -162,7 +214,7 @@ A `Laith343\FcmBlast\Events\FcmBlastCompleted` event fires when a run finishes �
 - **`kreait` OAuth token cached in your cache store**, refreshed ~10 min before expiry under a lock (no per-request token fetch, no stampede).
 - **Sliding-window rate limiter** (O(1) amortized) per worker.
 - **Atomic delta counters** flushed every 500 ms (`UPDATE ... SET col = col + delta`) — use Postgres/MySQL for concurrent worker writes.
-- **429/503 exponential backoff + in-process retry**; **404/400 pruning** via your handler.
+- **Exponential backoff + in-process retry** for `429`/`503` **and transient transport errors** (timeouts, connection resets, send/recv failures), so network blips self-heal; **404/400 pruning** via your handler.
 
 ### Ephemeral port range (one-time host tuning)
 
