@@ -48,6 +48,22 @@ return [
     'max_retries' => (int) env('FCM_BLAST_MAX_RETRIES', 5),
 
     /*
+     | Curl HTTP version: '2tls' (HTTP/2 over TLS, HTTP/1.1 over cleartext),
+     | '2' (force HTTP/2), or '1.1'. '2tls' is strongly recommended for real
+     | FCM — it multiplexes thousands of requests over a few connections and
+     | avoids socket exhaustion. It automatically falls back to HTTP/1.1 for
+     | plain-http endpoints (e.g. a local mock).
+     */
+    'http_version' => env('FCM_BLAST_HTTP_VERSION', '2tls'),
+
+    /*
+     | Max TCP connections per host. Null uses rateCap * 0.3 (tuned for the
+     | many-connections HTTP/1.1 mock). For real FCM over HTTP/2 set a small
+     | value (e.g. 8-32) so requests multiplex instead of opening sockets.
+     */
+    'max_host_connections' => env('FCM_BLAST_MAX_HOST_CONNECTIONS'),
+
+    /*
      | Queue name and connection the blast jobs are dispatched onto. The
      | connection must be 'redis' for stale-job purging to run.
      */

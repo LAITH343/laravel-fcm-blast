@@ -23,7 +23,11 @@ php artisan migrate
 'token_source'    => App\Fcm\MyTokenSource::class,
 'message_builder' => App\Fcm\MyMessageBuilder::class,
 'invalid_token_handler' => App\Fcm\PruneToken::class, // optional
+'http_version'         => '2tls',               // HTTP/2 for real FCM, HTTP/1.1 for cleartext mocks
+'max_host_connections' => 16,                   // small for HTTP/2 (real FCM); null = rateCap*0.3 (HTTP/1.1 mock)
 ```
+
+> **Real FCM needs HTTP/2.** Over HTTP/1.1 every in-flight request needs its own TLS connection, so high concurrency to `fcm.googleapis.com` exhausts sockets (timeouts, broken pipes). `http_version => '2tls'` (the default) multiplexes thousands of requests over a handful of connections — set `max_host_connections` to something small (8-32). `2tls` automatically uses HTTP/1.1 for plain-`http` endpoints, so a local mock is unaffected and can keep its many-connections setup (`max_host_connections => null`).
 
 ## Integrate
 

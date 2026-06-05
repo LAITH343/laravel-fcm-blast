@@ -35,6 +35,8 @@ class SendFcmBatch implements ShouldQueue
         public string $messageBuilderClass,
         public ?string $invalidTokenHandlerClass,
         public int $maxRetries,
+        public int $httpVersion,
+        public ?int $maxHostConnections,
         public string $queueName,
     ) {
         $this->onQueue($queueName);
@@ -65,6 +67,8 @@ class SendFcmBatch implements ShouldQueue
             messageBuilder: $builder,
             maxRetries: $this->maxRetries,
             onInvalidToken: $onInvalid,
+            httpVersion: $this->httpVersion,
+            maxHostConnections: $this->maxHostConnections,
         ));
     }
 }

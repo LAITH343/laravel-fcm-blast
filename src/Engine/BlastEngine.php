@@ -32,10 +32,11 @@ class BlastEngine
         $bearer = $this->tokenProvider->token();
         $tokenCheckedAt = microtime(true);
 
-        $hostConnections = max(200, (int) ceil($config->rateCapPerSec * 0.3));
+        $hostConnections = $config->maxHostConnections ?? max(200, (int) ceil($config->rateCapPerSec * 0.3));
         $mh = curl_multi_init();
         curl_multi_setopt($mh, CURLMOPT_MAX_TOTAL_CONNECTIONS, $hostConnections);
         curl_multi_setopt($mh, CURLMOPT_MAX_HOST_CONNECTIONS, $hostConnections);
+        curl_multi_setopt($mh, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
 
         $pool = new HandlePool;
         $rate = new RateWindow($config->rateCapPerSec);
@@ -220,7 +221,7 @@ class BlastEngine
             CURLOPT_TCP_KEEPALIVE => 1,
             CURLOPT_FORBID_REUSE => 0,
             CURLOPT_FRESH_CONNECT => 0,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_HTTP_VERSION => $config->httpVersion,
         ]);
     }
 

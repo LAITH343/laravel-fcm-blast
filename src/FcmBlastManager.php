@@ -85,6 +85,9 @@ class FcmBlastManager
         $slices = $this->planner->slices($total, $workers);
         $this->reset();
 
+        $httpVersion = $this->httpVersion();
+        $maxHostConnections = $this->maxHostConnections();
+
         foreach ($slices as $slice) {
             SendFcmBatch::dispatch(
                 $runId,
@@ -98,6 +101,8 @@ class FcmBlastManager
                 $messageBuilderClass,
                 $invalidHandlerClass,
                 (int) $this->config->get('fcm-blast.max_retries', 5),
+                $httpVersion,
+                $maxHostConnections,
                 $queue,
             );
         }
@@ -116,6 +121,22 @@ class FcmBlastManager
         $this->messageBuilderClass = null;
         $this->invalidTokenHandlerClass = null;
         $this->validateOnly = null;
+    }
+
+    private function httpVersion(): int
+    {
+        return match (strtolower((string) $this->config->get('fcm-blast.http_version', '2tls'))) {
+            '1.1', '1' => CURL_HTTP_VERSION_1_1,
+            '2', '2.0' => CURL_HTTP_VERSION_2_0,
+            default => CURL_HTTP_VERSION_2TLS,
+        };
+    }
+
+    private function maxHostConnections(): ?int
+    {
+        $value = $this->config->get('fcm-blast.max_host_connections');
+
+        return ($value === null || $value === '') ? null : (int) $value;
     }
 
     private function endpoint(): string

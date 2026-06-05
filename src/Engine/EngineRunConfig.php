@@ -23,5 +23,7 @@ final class EngineRunConfig
         public MessageBuilder $messageBuilder,
         public int $maxRetries = 5,
         public ?Closure $onInvalidToken = null,
+        public int $httpVersion = CURL_HTTP_VERSION_2TLS,
+        public ?int $maxHostConnections = null,
     ) {}
 }
