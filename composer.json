@@ -1,0 +1,35 @@
+{
+    "name": "laith343/laravel-fcm-blast",
+    "description": "High-throughput Firebase Cloud Messaging blaster for Laravel. Pushes 10k+ req/s via a reused curl_multi handle pool, OAuth handled by kreait/firebase-php.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "firebase", "fcm", "push-notifications", "high-throughput", "curl-multi"],
+    "require": {
+        "php": "^8.3",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/queue": "^12.0|^13.0",
+        "illuminate/console": "^12.0|^13.0",
+        "kreait/firebase-php": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Laith343\\FcmBlast\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Laith343\\FcmBlast\\FcmBlastServiceProvider"
+            ],
+            "aliases": {
+                "FcmBlast": "Laith343\\FcmBlast\\Facades\\FcmBlast"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
