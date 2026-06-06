@@ -101,12 +101,43 @@ use Laith343\FcmBlast\Contracts\MessageBuilder;
 class MyMessageBuilder implements MessageBuilder
 {
     // Return the FCM v1 "message" body; the engine injects `token` and the envelope.
-    public function build(string $token): array
+    // $context is null unless your TokenSource attached one (see below).
+    public function build(string $token, mixed $context = null): array
     {
         return ['notification' => ['title' => 'Hi', 'body' => 'There']];
     }
 }
 ```
+
+### Per-token context (localization, custom logic)
+
+To tailor the message per user, have your `TokenSource` yield an `OutboundToken`
+(token + arbitrary context) instead of a plain string. The context reaches
+`build()` unchanged. It's fully optional — yielding a string keeps `$context` null,
+so existing sources/builders are unaffected.
+
+```php
+use Laith343\FcmBlast\Support\OutboundToken;
+
+// In TokenSource::stream()
+yield new OutboundToken($user->fcm_token, ['locale' => $user->locale, 'name' => $user->name]);
+// or, no context:
+yield $user->fcm_token;
+```
+
+```php
+// In MessageBuilder::build()
+public function build(string $token, mixed $context = null): array
+{
+    $locale = $context['locale'] ?? 'en';
+    return ['notification' => [
+        'title' => __('push.title', [], $locale),
+        'body'  => __('push.body', ['name' => $context['name'] ?? ''], $locale),
+    ]];
+}
+```
+
+`context` can be any value (array, DTO, model) — it's passed in-process, not serialized.
 
 Optional — prune permanently invalid tokens (FCM 404/400):
 

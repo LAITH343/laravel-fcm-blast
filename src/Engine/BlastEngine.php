@@ -5,6 +5,7 @@ namespace Laith343\FcmBlast\Engine;
 use CurlHandle;
 use Laith343\FcmBlast\Auth\TokenProvider;
 use Laith343\FcmBlast\Contracts\RunReporter;
+use Laith343\FcmBlast\Support\OutboundToken;
 use Laith343\FcmBlast\Support\Outcome;
 
 /**
@@ -75,12 +76,12 @@ class BlastEngine
                 }
 
                 $ch = $pool->acquire();
-                $this->configureHandle($ch, $item['token'], $bearer, $config);
+                $this->configureHandle($ch, $item['token'], $item['context'], $bearer, $config);
                 curl_multi_add_handle($mh, $ch);
 
                 $id = spl_object_id($ch);
                 $inFlight[$id] = $ch;
-                $meta[$id] = ['token' => $item['token'], 'start' => $now, 'attempts' => $item['attempts']];
+                $meta[$id] = ['token' => $item['token'], 'context' => $item['context'], 'start' => $now, 'attempts' => $item['attempts']];
                 $rate->record($now);
                 $dispatchedThisTick++;
                 $now = microtime(true);
@@ -125,9 +126,9 @@ class BlastEngine
     }
 
     /**
-     * @param  list<array{token:string,attempts:int,at:float}>  $retry
-     * @param  \Generator<int,string>  $tokens
-     * @return array{token:string,attempts:int,at:float}|null
+     * @param  list<array{token:string,context:mixed,attempts:int,at:float}>  $retry
+     * @param  \Generator<int,string|OutboundToken>  $tokens
+     * @return array{token:string,context:mixed,attempts:int,at:float}|null
      */
     private function nextItem(array &$retry, \Generator $tokens, int &$consumed, int $count, float $now): ?array
     {
@@ -140,19 +141,23 @@ class BlastEngine
         }
 
         if ($consumed < $count && $tokens->valid()) {
-            $token = $tokens->current();
+            $value = $tokens->current();
             $tokens->next();
             $consumed++;
 
-            return ['token' => $token, 'attempts' => 0, 'at' => 0.0];
+            [$token, $context] = $value instanceof OutboundToken
+                ? [$value->token, $value->context]
+                : [$value, null];
+
+            return ['token' => $token, 'context' => $context, 'attempts' => 0, 'at' => 0.0];
         }
 
         return null;
     }
 
     /**
-     * @param  array{token:string,start:float,attempts:int}  $entry
-     * @param  list<array{token:string,attempts:int,at:float}>  $retry
+     * @param  array{token:string,context:mixed,start:float,attempts:int}  $entry
+     * @param  list<array{token:string,context:mixed,attempts:int,at:float}>  $retry
      * @param  array<string,int>  $delta
      */
     private function applyOutcome(Outcome $outcome, array $entry, EngineRunConfig $config, array &$retry, array &$delta): void
@@ -167,6 +172,7 @@ class BlastEngine
             $backoff = min(self::MAX_BACKOFF, (2 ** $entry['attempts']) * 0.25);
             $retry[] = [
                 'token' => $entry['token'],
+                'context' => $entry['context'],
                 'attempts' => $entry['attempts'] + 1,
                 'at' => microtime(true) + $backoff,
             ];
@@ -189,9 +195,9 @@ class BlastEngine
         }
     }
 
-    private function configureHandle(CurlHandle $ch, string $token, string $bearer, EngineRunConfig $config): void
+    private function configureHandle(CurlHandle $ch, string $token, mixed $context, string $bearer, EngineRunConfig $config): void
     {
-        $body = ['message' => $config->messageBuilder->build($token)];
+        $body = ['message' => $config->messageBuilder->build($token, $context)];
         $body['message']['token'] = $token;
         if ($config->validateOnly) {
             $body['validate_only'] = true;
