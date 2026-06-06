@@ -88,6 +88,7 @@ class FcmBlastManager
         $this->reset();
 
         $httpVersion = $this->httpVersion();
+        $rateBurst = $this->rateBurst($rateCap);
 
         foreach ($slices as $slice) {
             SendFcmBatch::dispatch(
@@ -105,6 +106,7 @@ class FcmBlastManager
                 $httpVersion,
                 $maxHostConnections,
                 $maxConcurrentStreams,
+                $rateBurst,
                 $queue,
             );
         }
@@ -138,6 +140,22 @@ class FcmBlastManager
         }
 
         return max(200, (int) ceil($rateCap * 0.6));
+    }
+
+    /**
+     * Max instantaneous burst for the paced limiter. Kept small (5% of the
+     * per-worker rate by default) so dispatch stays smooth and never spikes
+     * past FCM's sub-second quota, regardless of connection count.
+     */
+    private function rateBurst(int $rateCap): int
+    {
+        $value = $this->config->get('fcm-blast.rate_burst');
+
+        if ($value === null || $value === '') {
+            return max(1, (int) ceil($rateCap * 0.05));
+        }
+
+        return max(1, (int) $value);
     }
 
     private function httpVersion(): int

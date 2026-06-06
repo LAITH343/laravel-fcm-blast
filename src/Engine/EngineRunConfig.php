@@ -26,5 +26,6 @@ final class EngineRunConfig
         public int $httpVersion = CURL_HTTP_VERSION_2TLS,
         public ?int $maxHostConnections = null,
         public int $maxConcurrentStreams = 100,
+        public int $rateBurst = 0,
     ) {}
 }

@@ -41,7 +41,8 @@ class BlastEngine
         curl_multi_setopt($mh, CURLMOPT_MAX_CONCURRENT_STREAMS, $config->maxConcurrentStreams);
 
         $pool = new HandlePool;
-        $rate = new RateWindow($config->rateCapPerSec);
+        $burst = $config->rateBurst > 0 ? $config->rateBurst : $config->rateCapPerSec;
+        $rate = new TokenBucket($config->rateCapPerSec, $burst);
         $tokens = $config->tokens;
 
         /** @var list<array{token:string,attempts:int,at:float}> $retry */
@@ -69,7 +70,7 @@ class BlastEngine
             }
 
             $dispatchedThisTick = 0;
-            while (count($inFlight) < $config->concurrency && $rate->allows($now)) {
+            while (count($inFlight) < $config->concurrency && $rate->tryConsume($now)) {
                 $item = $this->nextItem($retry, $tokens, $consumed, $config->count, $now);
                 if ($item === null) {
                     break;
@@ -82,7 +83,6 @@ class BlastEngine
                 $id = spl_object_id($ch);
                 $inFlight[$id] = $ch;
                 $meta[$id] = ['token' => $item['token'], 'context' => $item['context'], 'start' => $now, 'attempts' => $item['attempts']];
-                $rate->record($now);
                 $dispatchedThisTick++;
                 $now = microtime(true);
             }

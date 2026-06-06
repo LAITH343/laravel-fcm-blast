@@ -36,6 +36,13 @@ return [
     'rate_cap_per_sec' => (int) env('FCM_BLAST_RATE_CAP', 10000),
 
     /*
+     | Max instantaneous burst per worker for the paced limiter. Null defaults
+     | to 5% of the per-worker rate. Lower = smoother delivery (less chance of
+     | tripping FCM's sub-second quota); it does not affect sustained rate.
+     */
+    'rate_burst' => env('FCM_BLAST_RATE_BURST'),
+
+    /*
      | Send messages with validate_only=true by default (validate without
      | delivering). Overridable per run via ->validateOnly().
      */

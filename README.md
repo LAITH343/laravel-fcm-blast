@@ -39,6 +39,7 @@ Every config key has an env override:
 | `FCM_BLAST_PROJECT_ID` | — | Firebase project id; builds the FCM v1 endpoint. |
 | `FCM_BLAST_ENDPOINT` | — | Override endpoint. Empty = real FCM. Set to a mock URL for load testing. |
 | `FCM_BLAST_RATE_CAP` | `10000` | **Global** sends/sec cap, split across workers (`10000` = 600k/min). |
+| `FCM_BLAST_RATE_BURST` | 5% of rate | Max instantaneous burst per worker (paced limiter). Lower = smoother; doesn't change sustained rate. |
 | `FCM_BLAST_MAX_HOST_CONNECTIONS` | `16` | TCP connections per **worker**. Null = `rateCap*0.3` (HTTP/1.1 mock). |
 | `FCM_BLAST_MAX_CONCURRENT_STREAMS` | `100` | Max concurrent HTTP/2 streams per connection (FCM drops >~100). |
 | `FCM_BLAST_HTTP_VERSION` | `2tls` | `2tls` (HTTP/2 over TLS, 1.1 over cleartext), `2`, or `1.1`. |
@@ -247,7 +248,7 @@ A `Laith343\FcmBlast\Events\FcmBlastCompleted` event fires when a run finishes �
 - **N parallel queue workers**, each `floor(rate_cap_per_sec / workers)` RPS.
 - **Reused curl handle pool + persistent TCP** — no `curl_close` per request, avoids ephemeral-port exhaustion.
 - **`kreait` OAuth token cached in your cache store**, refreshed ~10 min before expiry under a lock (no per-request token fetch, no stampede).
-- **Sliding-window rate limiter** (O(1) amortized) per worker.
+- **Paced token-bucket rate limiter** per worker — refills continuously so sends are spread evenly across each second instead of bursting at the window edge. The burst is bounded by `rate_burst` (not by connection count), which keeps you under FCM's sub-second quota even with a large connection pool.
 - **Atomic delta counters** flushed every 500 ms (`UPDATE ... SET col = col + delta`) — use Postgres/MySQL for concurrent worker writes.
 - **Exponential backoff + in-process retry** for `429`/`503` **and transient transport errors** (timeouts, connection resets, send/recv failures), so network blips self-heal; **404/400 pruning** via your handler.
 

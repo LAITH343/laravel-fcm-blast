@@ -38,6 +38,7 @@ class SendFcmBatch implements ShouldQueue
         public int $httpVersion,
         public ?int $maxHostConnections,
         public int $maxConcurrentStreams,
+        public int $rateBurst,
         public string $queueName,
     ) {
         $this->onQueue($queueName);
@@ -71,6 +72,7 @@ class SendFcmBatch implements ShouldQueue
             httpVersion: $this->httpVersion,
             maxHostConnections: $this->maxHostConnections,
             maxConcurrentStreams: $this->maxConcurrentStreams,
+            rateBurst: $this->rateBurst,
         ));
     }
 }
