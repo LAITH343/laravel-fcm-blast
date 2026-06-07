@@ -4,6 +4,7 @@ namespace Laith343\FcmBlast\Jobs;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Laith343\FcmBlast\Contracts\ContextAware;
 use Laith343\FcmBlast\Contracts\InvalidTokenHandler;
 use Laith343\FcmBlast\Contracts\MessageBuilder;
 use Laith343\FcmBlast\Contracts\TokenSource;
@@ -40,6 +41,10 @@ class SendFcmBatch implements ShouldQueue
         public int $maxConcurrentStreams,
         public int $rateBurst,
         public string $queueName,
+        public mixed $context = null,
+        public bool $logRequests = false,
+        public string $logDirectory = '',
+        public int $logRetentionDays = 0,
     ) {
         $this->onQueue($queueName);
     }
@@ -47,14 +52,14 @@ class SendFcmBatch implements ShouldQueue
     public function handle(BlastEngine $engine): void
     {
         /** @var TokenSource $source */
-        $source = app($this->tokenSourceClass);
+        $source = $this->withContext(app($this->tokenSourceClass));
         /** @var MessageBuilder $builder */
-        $builder = app($this->messageBuilderClass);
+        $builder = $this->withContext(app($this->messageBuilderClass));
 
         $onInvalid = null;
         if ($this->invalidTokenHandlerClass !== null) {
             /** @var InvalidTokenHandler $handler */
-            $handler = app($this->invalidTokenHandlerClass);
+            $handler = $this->withContext(app($this->invalidTokenHandlerClass));
             $onInvalid = static fn (string $token) => $handler($token);
         }
 
@@ -73,6 +78,26 @@ class SendFcmBatch implements ShouldQueue
             maxHostConnections: $this->maxHostConnections,
             maxConcurrentStreams: $this->maxConcurrentStreams,
             rateBurst: $this->rateBurst,
+            logRequests: $this->logRequests,
+            logDirectory: $this->logDirectory,
+            logRetentionDays: $this->logRetentionDays,
         ));
+    }
+
+    /**
+     * Inject the per-run context into an instance that opts in via ContextAware.
+     *
+     * @template T of object
+     *
+     * @param  T  $instance
+     * @return T
+     */
+    private function withContext(object $instance): object
+    {
+        if ($instance instanceof ContextAware) {
+            return $instance->withRunContext($this->context);
+        }
+
+        return $instance;
     }
 }

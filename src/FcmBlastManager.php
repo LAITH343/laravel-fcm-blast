@@ -5,6 +5,7 @@ namespace Laith343\FcmBlast;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Support\Facades\Redis;
 use InvalidArgumentException;
+use Laith343\FcmBlast\Contracts\ContextAware;
 use Laith343\FcmBlast\Contracts\RunReporter;
 use Laith343\FcmBlast\Dispatching\RunPlanner;
 use Laith343\FcmBlast\Jobs\SendFcmBatch;
@@ -19,6 +20,8 @@ class FcmBlastManager
     private ?string $invalidTokenHandlerClass = null;
 
     private ?bool $validateOnly = null;
+
+    private mixed $runContext = null;
 
     public function __construct(
         private Config $config,
@@ -55,6 +58,19 @@ class FcmBlastManager
     }
 
     /**
+     * Attach a serializable per-run context (e.g. a campaign id or segment)
+     * that is delivered to any TokenSource, MessageBuilder, or
+     * InvalidTokenHandler implementing ContextAware. Travels through the
+     * queue, so it must be serializable.
+     */
+    public function withContext(mixed $context): self
+    {
+        $this->runContext = $context;
+
+        return $this;
+    }
+
+    /**
      * Plan, purge, persist, and dispatch a blast. Returns the run id.
      */
     public function start(int $total, int $workers): int
@@ -64,7 +80,14 @@ class FcmBlastManager
         $invalidHandlerClass = $this->invalidTokenHandlerClass
             ?? $this->config->get('fcm-blast.invalid_token_handler');
 
-        $available = app($tokenSourceClass)->count();
+        $context = $this->runContext;
+
+        $source = app($tokenSourceClass);
+        if ($source instanceof ContextAware) {
+            $source = $source->withRunContext($context);
+        }
+
+        $available = $source->count();
         $total = min($total, $available);
         if ($total <= 0) {
             throw new InvalidArgumentException('No tokens available to blast.');
@@ -90,6 +113,10 @@ class FcmBlastManager
         $httpVersion = $this->httpVersion();
         $rateBurst = $this->rateBurst($rateCap);
 
+        $logRequests = (bool) $this->config->get('fcm-blast.log_requests', false);
+        $logDirectory = $this->logDirectory();
+        $logRetentionDays = (int) $this->config->get('fcm-blast.log_retention_days', 7);
+
         foreach ($slices as $slice) {
             SendFcmBatch::dispatch(
                 $runId,
@@ -108,6 +135,10 @@ class FcmBlastManager
                 $maxConcurrentStreams,
                 $rateBurst,
                 $queue,
+                $context,
+                $logRequests,
+                $logDirectory,
+                $logRetentionDays,
             );
         }
 
@@ -125,6 +156,7 @@ class FcmBlastManager
         $this->messageBuilderClass = null;
         $this->invalidTokenHandlerClass = null;
         $this->validateOnly = null;
+        $this->runContext = null;
     }
 
     /**
@@ -165,6 +197,16 @@ class FcmBlastManager
             '2', '2.0' => CURL_HTTP_VERSION_2_0,
             default => CURL_HTTP_VERSION_2TLS,
         };
+    }
+
+    private function logDirectory(): string
+    {
+        $path = $this->config->get('fcm-blast.log_path');
+        if (is_string($path) && $path !== '') {
+            return $path;
+        }
+
+        return storage_path('logs/fcm-blast');
     }
 
     private function maxHostConnections(): ?int

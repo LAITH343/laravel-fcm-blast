@@ -140,6 +140,42 @@ public function build(string $token, mixed $context = null): array
 
 `context` can be any value (array, DTO, model) — it's passed in-process, not serialized.
 
+### Per-run context (which campaign am I serving?)
+
+Per-token context covers the message; per-run context tells the resolved
+`TokenSource` / `MessageBuilder` / `InvalidTokenHandler` instances *which run*
+they're serving. Workers resolve those classes from the container with no
+arguments, so without this they can't know the campaign. Implement
+`ContextAware` and pass the payload via `withContext()`:
+
+```php
+use Laith343\FcmBlast\Contracts\ContextAware;
+use Laith343\FcmBlast\Contracts\TokenSource;
+
+class CampaignTokenSource implements TokenSource, ContextAware
+{
+    private int $campaignId;
+
+    public function withRunContext(mixed $context): static
+    {
+        $this->campaignId = $context['campaign_id'];
+        return $this;
+    }
+
+    public function count(): int { /* tokens for $this->campaignId */ }
+    public function stream(int $offset, int $limit): Generator { /* ... */ }
+}
+```
+
+```php
+FcmBlast::withContext(['campaign_id' => 42])->start($total, $workers);
+```
+
+The context travels through the queued job, so it must be **serializable**
+(arrays/scalars, or SerializesModels-friendly values) — unlike per-token
+context, which stays in-process. Opt-in: classes that don't implement
+`ContextAware` are untouched.
+
 Optional — prune permanently invalid tokens (FCM 404/400):
 
 ```php
@@ -150,6 +186,31 @@ class PruneToken implements InvalidTokenHandler
     public function __invoke(string $token): void { /* deactivate $token */ }
 }
 ```
+
+## Per-request debug logging
+
+Enable to capture every request's full body, context, outcome, HTTP code and
+latency for later debugging:
+
+```env
+FCM_BLAST_LOG_REQUESTS=true
+FCM_BLAST_LOG_RETENTION_DAYS=7        # files older than this are pruned at run start
+FCM_BLAST_LOG_PATH=                   # defaults to storage/logs/fcm-blast
+```
+
+Output is one NDJSON record per request, in a daily-rotated file
+(`fcm-blast-requests-YYYY-MM-DD.log`):
+
+```json
+{"ts":"2026-06-07T12:00:00+00:00","run_id":42,"token":"...","context":{"locale":"en"},"attempt":1,"http_code":200,"curl_errno":0,"outcome":"Ok","latency_ms":108,"body":{"message":{"notification":{"title":"Hi"},"token":"..."}}}
+```
+
+**Performance:** records are buffered in memory and appended in bulk on the
+engine's existing 0.5s flush tick (with a hard buffer cap), so the send loop
+does one file append per half-second per worker — not one write per request.
+This is far cheaper than a per-request log queue (which would dispatch more
+jobs than the sends themselves), so logging stays in the worker. Keep it off
+in production unless actively debugging.
 
 ## Run a blast
 

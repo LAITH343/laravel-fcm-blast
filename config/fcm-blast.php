@@ -88,6 +88,18 @@ return [
     'connection' => env('FCM_BLAST_CONNECTION', 'redis'),
 
     /*
+     | Per-request debug logging. When enabled, each request's full body,
+     | context, outcome, HTTP code and latency is written as one NDJSON line
+     | to a daily-rotated file. Writes are buffered and flushed in bulk so
+     | the send loop is not slowed by per-request disk I/O. Files older than
+     | log_retention_days are pruned at the start of each run. Leave disabled
+     | in production unless actively debugging.
+     */
+    'log_requests' => (bool) env('FCM_BLAST_LOG_REQUESTS', false),
+    'log_retention_days' => (int) env('FCM_BLAST_LOG_RETENTION_DAYS', 7),
+    'log_path' => env('FCM_BLAST_LOG_PATH'),
+
+    /*
      | Cache key holding the shared OAuth token, and how many seconds before
      | expiry to proactively refresh it.
      */

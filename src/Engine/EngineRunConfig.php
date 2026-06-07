@@ -27,5 +27,8 @@ final class EngineRunConfig
         public ?int $maxHostConnections = null,
         public int $maxConcurrentStreams = 100,
         public int $rateBurst = 0,
+        public bool $logRequests = false,
+        public string $logDirectory = '',
+        public int $logRetentionDays = 0,
     ) {}
 }

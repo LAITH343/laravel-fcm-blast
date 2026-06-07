@@ -5,6 +5,7 @@ namespace Laith343\FcmBlast\Engine;
 use CurlHandle;
 use Laith343\FcmBlast\Auth\TokenProvider;
 use Laith343\FcmBlast\Contracts\RunReporter;
+use Laith343\FcmBlast\Logging\RequestLogger;
 use Laith343\FcmBlast\Support\OutboundToken;
 use Laith343\FcmBlast\Support\Outcome;
 
@@ -30,6 +31,12 @@ class BlastEngine
     {
         $this->reporter->markRunning($config->runId);
 
+        $logger = null;
+        if ($config->logRequests) {
+            $logger = new RequestLogger($config->logDirectory, $config->logRetentionDays);
+            $logger->prune();
+        }
+
         $bearer = $this->tokenProvider->token();
         $tokenCheckedAt = microtime(true);
 
@@ -49,7 +56,7 @@ class BlastEngine
         $retry = [];
         /** @var array<int,CurlHandle> $inFlight */
         $inFlight = [];
-        /** @var array<int,array{token:string,start:float,attempts:int}> $meta */
+        /** @var array<int,array{token:string,context:mixed,start:float,attempts:int,body?:string}> $meta */
         $meta = [];
 
         $consumed = 0;
@@ -77,12 +84,15 @@ class BlastEngine
                 }
 
                 $ch = $pool->acquire();
-                $this->configureHandle($ch, $item['token'], $item['context'], $bearer, $config);
+                $payload = $this->configureHandle($ch, $item['token'], $item['context'], $bearer, $config);
                 curl_multi_add_handle($mh, $ch);
 
                 $id = spl_object_id($ch);
                 $inFlight[$id] = $ch;
                 $meta[$id] = ['token' => $item['token'], 'context' => $item['context'], 'start' => $now, 'attempts' => $item['attempts']];
+                if ($logger !== null) {
+                    $meta[$id]['body'] = $payload;
+                }
                 $dispatchedThisTick++;
                 $now = microtime(true);
             }
@@ -102,6 +112,21 @@ class BlastEngine
                 $outcome = OutcomeClassifier::classify($info['result'], $code);
                 $this->applyOutcome($outcome, $entry, $config, $retry, $delta);
 
+                if ($logger !== null) {
+                    $logger->record([
+                        'ts' => date('c'),
+                        'run_id' => $config->runId,
+                        'token' => $entry['token'],
+                        'context' => $entry['context'],
+                        'attempt' => $entry['attempts'] + 1,
+                        'http_code' => $code,
+                        'curl_errno' => $info['result'],
+                        'outcome' => $outcome->name,
+                        'latency_ms' => (int) ((microtime(true) - $entry['start']) * 1000),
+                        'body' => json_decode($entry['body'] ?? 'null', true),
+                    ]);
+                }
+
                 curl_multi_remove_handle($mh, $ch);
                 unset($inFlight[$id], $meta[$id]);
                 $pool->release($ch);
@@ -109,6 +134,7 @@ class BlastEngine
 
             if (microtime(true) - $lastFlush >= self::FLUSH_INTERVAL) {
                 $this->flush($config->runId, $delta);
+                $logger?->flush();
                 $lastFlush = microtime(true);
             }
 
@@ -119,6 +145,7 @@ class BlastEngine
         }
 
         $this->flush($config->runId, $delta);
+        $logger?->flush();
         $pool->closeAll();
         curl_multi_close($mh);
 
@@ -195,7 +222,7 @@ class BlastEngine
         }
     }
 
-    private function configureHandle(CurlHandle $ch, string $token, mixed $context, string $bearer, EngineRunConfig $config): void
+    private function configureHandle(CurlHandle $ch, string $token, mixed $context, string $bearer, EngineRunConfig $config): string
     {
         $body = ['message' => $config->messageBuilder->build($token, $context)];
         $body['message']['token'] = $token;
@@ -203,10 +230,12 @@ class BlastEngine
             $body['validate_only'] = true;
         }
 
+        $payload = (string) json_encode($body);
+
         curl_setopt_array($ch, [
             CURLOPT_URL => $config->endpoint,
             CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($body),
+            CURLOPT_POSTFIELDS => $payload,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Authorization: Bearer '.$bearer,
@@ -220,6 +249,8 @@ class BlastEngine
             CURLOPT_FRESH_CONNECT => 0,
             CURLOPT_HTTP_VERSION => $config->httpVersion,
         ]);
+
+        return $payload;
     }
 
     /**
