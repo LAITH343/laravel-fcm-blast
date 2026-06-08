@@ -3,7 +3,18 @@
     "description": "High-throughput Firebase Cloud Messaging blaster for Laravel. Pushes 10k+ req/s via a reused curl_multi handle pool, OAuth handled by kreait/firebase-php.",
     "type": "library",
     "license": "MIT",
+    "homepage": "https://github.com/LAITH343/laravel-fcm-blast",
     "keywords": ["laravel", "firebase", "fcm", "push-notifications", "high-throughput", "curl-multi"],
+    "authors": [
+        {
+            "name": "LAITH343",
+            "email": "laith.amer.343@gmail.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/LAITH343/laravel-fcm-blast/issues",
+        "source": "https://github.com/LAITH343/laravel-fcm-blast"
+    },
     "require": {
         "php": "^8.3",
         "ext-curl": "*",

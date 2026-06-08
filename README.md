@@ -1,8 +1,50 @@
 # laravel-fcm-blast
 
+`laith343/laravel-fcm-blast`
+
+[![Packagist Version](https://img.shields.io/packagist/v/laith343/laravel-fcm-blast)](https://packagist.org/packages/laith343/laravel-fcm-blast)
+[![PHP Version](https://img.shields.io/packagist/php-v/laith343/laravel-fcm-blast)](https://packagist.org/packages/laith343/laravel-fcm-blast)
+[![License](https://img.shields.io/packagist/l/laith343/laravel-fcm-blast)](LICENSE)
+
 High-throughput Firebase Cloud Messaging sender for Laravel. Pushes **10k+ req/s** from PHP by driving a reused `curl_multi` handle pool with persistent TCP — OAuth handled by `kreait/firebase-php`, delivery handled by the engine.
 
 This package is **backend only**. It exposes a programmatic API and a status DTO; build whatever UI/monitoring you want on top of `status()`.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Supported versions](#supported-versions)
+- [Install](#install)
+- [Configure](#configure)
+- [Environment variables](#environment-variables)
+- [Sizing for your target RPS](#sizing-for-your-target-rps)
+- [Integrate](#integrate)
+- [Per-request debug logging](#per-request-debug-logging)
+- [Run a blast](#run-a-blast)
+- [Run locally](#run-locally)
+- [Run in production](#run-in-production)
+- [Monitor](#monitor)
+- [How it hits 10k RPS](#how-it-hits-10k-rps)
+
+## Requirements
+
+| Requirement | Version | Why |
+|---|---|---|
+| PHP | `^8.3` | Engine + typed contracts. |
+| Laravel (`illuminate/*`) | `^12.0` \| `^13.0` | Queue, Eloquent, container, facades. |
+| `ext-curl` | * | `curl_multi` is the delivery engine. |
+| `ext-json` | * | Payload encoding. |
+| `kreait/firebase-php` | `^7.0` | Service-account OAuth token minting. |
+| Redis | — | Queue connection; required for the stale-job purge on start. |
+| Database | Postgres / MySQL | Holds the per-run counters. The engine flushes **atomic** `col = col + delta` updates concurrently from every worker. |
+
+> **SQLite caveat:** fine for the test suite and single-worker dev runs, but its single-writer lock serializes the concurrent counter flushes — do not use it for multi-worker production blasts. Use Postgres or MySQL there.
+
+## Supported versions
+
+| Package | PHP | Laravel |
+|---|---|---|
+| `0.x` | 8.3+ | 12.x, 13.x |
 
 ## Install
 
@@ -224,7 +266,42 @@ $runId = FcmBlast::tokensFrom(MyTokenSource::class)   // optional if set in conf
     ->start(total: 1_000_000, workers: 4);
 ```
 
-Run one queue worker process per worker (the process count **must** match the `workers` arg). Pick the command for your platform:
+`start()` returns the run id. Spin up **one queue worker process per worker** —
+the process count **must** match the `workers` arg, since each job streams its
+own non-overlapping slice of the tokens.
+
+## Run locally
+
+For development you don't need real Firebase credentials. Two modes:
+
+**1. Fake-token mode** — leave `credentials` empty. The token provider returns a
+dummy bearer instead of minting a real OAuth token, so you can exercise the full
+dispatch/queue/counter pipeline without Firebase:
+
+```dotenv
+FCM_BLAST_CREDENTIALS=
+FCM_BLAST_PROJECT_ID=demo
+```
+
+**2. Mock endpoint** — point the sender at a local HTTP server to load-test the
+engine without hitting FCM. Over plain `http` the `2tls` setting auto-falls back
+to HTTP/1.1, so let the pool grow:
+
+```dotenv
+FCM_BLAST_CREDENTIALS=
+FCM_BLAST_ENDPOINT=http://127.0.0.1:8080/send
+FCM_BLAST_MAX_HOST_CONNECTIONS=          # null -> rateCap*0.3 (HTTP/1.1 mock)
+```
+
+Start a worker and kick off a blast (one worker shown):
+
+```bash
+php artisan queue:work redis --queue=fcm-blast --tries=1 --timeout=1800 &
+php artisan tinker
+>>> Laith343\FcmBlast\Facades\FcmBlast::start(total: 1000, workers: 1);
+```
+
+For multiple local workers, start that many `queue:work` processes:
 
 **Linux / macOS (bash/zsh)**
 
@@ -242,7 +319,16 @@ done
 }
 ```
 
-For production, run the workers under a process supervisor instead of by hand.
+**Run the test suite:**
+
+```bash
+composer test
+```
+
+## Run in production
+
+Run the workers under a process supervisor instead of by hand, and make the
+process count match the `workers` you pass to `start()`.
 
 ### Supervisor (Linux)
 
